@@ -25,7 +25,7 @@ Backend variables go in `backend/.env` (template: `backend/.env.example`); front
 | `MAX_COUNTING_AGENTS` | no | `15` | Counting agents per candidate per constituency |
 | `AADHAAR_ENCRYPTION_KEY` | recommended | empty | 64 hex characters. When set, Aadhaar numbers are stored encrypted (AES-256-GCM); when empty, only the last four digits are kept. Never change it once data is stored. |
 | `ADMIN_EPIC`, `ECI_EPIC` | no | `ADM0000001`, `ECI0000001` | Seeded legacy admin and ECI administrator accounts |
-| `ENABLE_DEMO_OTP_NOTIFICATIONS` | no | off | Shows OTPs in the browser's demo notification feed (never in production) |
+| `ENABLE_DEMO_OTP_NOTIFICATIONS` | no | off | Shows OTPs in the demo phone feed at `/phone` (also in production; there is no SMS gateway) |
 | `PERSONA_API_KEY`, `PERSONA_TEMPLATE_ID`, `PERSONA_ENVIRONMENT_ID`, `PERSONA_WEBHOOK_SECRET`, `PERSONA_API_VERSION` | for Persona | — | Identity verification sandbox. The webhook is refused without its secret. |
 | `PERSONA_DEMO_MODE` | no | off | Lets the legacy poll-day identity step pass, labelled "simulated". Refused in live production. |
 | `GEMINI_API` (or `GEMINI_API_KEY`) | no | empty | Optional AI document review; a rule engine runs without it |

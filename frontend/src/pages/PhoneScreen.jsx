@@ -17,7 +17,10 @@ export default function PhoneScreen() {
     useEffect(() => {
         const fetchNotifications = async () => {
             try {
-                const epic = localStorage.getItem("epic");
+                // /phone?epic=ABC1234567 picks the voter explicitly; otherwise the EPIC last used to sign in.
+                const fromUrl = new URLSearchParams(window.location.search).get("epic")?.trim().toUpperCase();
+                if (fromUrl) localStorage.setItem("epic", fromUrl);
+                const epic = fromUrl || localStorage.getItem("epic");
 
                 if (!epic) {
                     console.warn("No EPIC found in localStorage");

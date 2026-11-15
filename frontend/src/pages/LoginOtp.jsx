@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
@@ -17,6 +17,13 @@ function LoginOtp() {
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState("");
+
+    // The demo phone (/phone) reads the EPIC from here to show the code sent to it.
+    useEffect(() => {
+        if (/^[A-Z]{3}\d{7}$/.test(epic)) {
+            try { localStorage.setItem("epic", epic); } catch { /* storage unavailable */ }
+        }
+    }, [epic]);
 
     // Skip the OTP step only if this same account is already signed in. Signing in with a
     // different EPIC (e.g. a BLO while a voter session is open) must go through the OTP step,

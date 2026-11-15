@@ -4,10 +4,9 @@ import { ApiError } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const getUserNotifications = asyncHandler(async (req, res) => {
-    if (
-        process.env.NODE_ENV === "production" ||
-        process.env.ENABLE_DEMO_OTP_NOTIFICATIONS !== "true"
-    ) {
+    // There is no SMS gateway, so this demo feed (shown on /phone) is the only way to read a code.
+    // It is off unless ENABLE_DEMO_OTP_NOTIFICATIONS=true, including in production.
+    if (process.env.ENABLE_DEMO_OTP_NOTIFICATIONS !== "true") {
         throw new ApiError(403, "Demo OTP notifications are disabled.");
     }
 
