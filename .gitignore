@@ -12,3 +12,5 @@ face-service/reference/*
 # Redis snapshots are runtime data, never source
 dump.rdb
 *.rdb
+.vercel
+.env*
