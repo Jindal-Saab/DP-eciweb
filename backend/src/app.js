@@ -87,7 +87,15 @@ const normalizeOrigin = (o) => o.trim().replace(/\/$/, "");
 const vercelOrigins = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
   .filter(Boolean)
   .map((host) => `https://${host}`);
-const allowedOrigins = [...(process.env.CLIENT_URL || "http://localhost:5173").split(","), ...vercelOrigins]
+// The public sites that serve this frontend. They are always allowed, so a CLIENT_URL that forgets
+// one of them cannot break sign-in on that domain.
+const siteOrigins = [
+  "https://www.eciweb.in",
+  "https://eciweb.in",
+  "https://dp-eciweb.vercel.app",
+  "https://dp-eciweb-q222.vercel.app"
+];
+const allowedOrigins = [...(process.env.CLIENT_URL || "http://localhost:5173").split(","), ...siteOrigins, ...vercelOrigins]
   .map(normalizeOrigin)
   .filter(Boolean);
 const originPatterns = allowedOrigins
