@@ -1,7 +1,12 @@
 import axios from "axios";
 
+// In a production build the API is served from the same origin (vercel.json rewrites /api/* to the
+// backend), so requests are same-origin and need no CORS. VITE_API_URL overrides this for a
+// backend hosted elsewhere; the localhost default is for `npm run dev`.
+export const API_BASE = (import.meta.env.VITE_API_URL || (import.meta.env.PROD ? "/api/v1" : "http://localhost:8000/api/v1")).replace(/\/$/, "");
+
 const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1",
+    baseURL: API_BASE,
     withCredentials: true,
     headers: {
         "Content-Type": "application/json",

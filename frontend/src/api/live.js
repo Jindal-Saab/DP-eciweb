@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
-import api from "./axios";
+import api, { API_BASE } from "./axios";
 
 // Live operational updates. A Socket.IO message is only a hint that something changed: the screen
 // reloads its data from the API, which stays the source of truth. After a reconnect the client
@@ -8,7 +8,7 @@ import api from "./axios";
 // available (serverless hosting, a blocked WebSocket, the server switched them off) the screen
 // keeps polling, so nothing depends on the socket.
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
+const API = API_BASE;
 const ORIGIN = API.replace(/\/api\/v1\/?$/, "");
 const LIVE = import.meta.env.VITE_REALTIME !== "off";
 

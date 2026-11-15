@@ -80,24 +80,41 @@ app.use((req, res, next) => {
     next();
 });
 
-const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
-  .split(",")
-  .map((o) => o.trim().replace(/\/$/, ""))
+// Allowed browser origins: CLIENT_URL (comma-separated; "*" wildcards allowed, e.g.
+// https://dp-eciweb-*.vercel.app) plus this deployment's own Vercel URLs, so the frontend served by
+// the same Vercel project (production, branch and preview URLs) is always accepted.
+const normalizeOrigin = (o) => o.trim().replace(/\/$/, "");
+const vercelOrigins = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL]
+  .filter(Boolean)
+  .map((host) => `https://${host}`);
+const allowedOrigins = [...(process.env.CLIENT_URL || "http://localhost:5173").split(","), ...vercelOrigins]
+  .map(normalizeOrigin)
   .filter(Boolean);
+const originPatterns = allowedOrigins
+  .filter((o) => o.includes("*"))
+  .map((o) => new RegExp("^" + o.split("*").map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join("[a-z0-9-]+") + "$", "i"));
+export const isAllowedOrigin = (origin) =>
+  !origin || allowedOrigins.includes(origin) || originPatterns.some((re) => re.test(origin));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-      console.warn("CORS blocked:", origin, "| allowed:", allowedOrigins.join(","));
-      return callback(null, false);
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Step-Up", "X-Requested-With", "X-Device-Id", "X-Device-Token", "Idempotency-Key"],
-    exposedHeaders: ["X-App-Mode"]
-  })
-);
+const corsMiddleware = cors({
+  origin: (origin, callback) => {
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    console.warn("CORS blocked:", origin, "| allowed:", allowedOrigins.join(","));
+    return callback(null, false);
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-Step-Up", "X-Requested-With", "X-Device-Id", "X-Device-Token", "Idempotency-Key"],
+  exposedHeaders: ["X-App-Mode"],
+  maxAge: 600
+});
+app.use(corsMiddleware);
+// A preflight from an origin that is not allowed would otherwise fall through to the routes and
+// come back as a confusing 404; answer it explicitly instead.
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS") return res.status(isAllowedOrigin(req.headers.origin) ? 204 : 403).end();
+  next();
+});
 
 // Camera frames are sent as base64 JPEGs, so the body limit must be generous.
 // The raw body is kept only for the Persona webhook, whose signature covers the exact bytes sent.
