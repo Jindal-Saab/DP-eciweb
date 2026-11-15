@@ -1,10 +1,10 @@
-// Electoral forms 2, 2A, 3, 6A, 6B, 7 and 8 for officials: the BLO verifies in the field and
+// Electoral forms 2, 2A, 3, 6, 6A, 6B, 7 and 8 for officials: the BLO verifies in the field and
 // recommends; only the ERO/AERO decides. Observers and supervisors read.
 import { useState } from "react";
 import api from "../../api/axios";
 import { Badge, Empty, Field, Panel, Status, Table, day, label, useAction, useLoad, when } from "./kit";
 
-const TONE = { submitted: "warn", field_verified: "info", approved: "ok", rejected: "bad", withdrawn: undefined };
+const TONE = { submitted: "warn", field_verified: "info", information_required: "warn", approved: "ok", rejected: "bad", withdrawn: undefined };
 const FIELD_LABELS = { firstName: "First name", lastName: "Last name", fullName: "Full name", applicantName: "Applicant", electorName: "Elector", dateOfBirth: "Date of birth", gender: "Gender",
     epicNumber: "EPIC", applicantEpic: "Applicant's EPIC", personEpic: "EPIC objected to", reason: "Reason", applicationType: "Request", correctionFields: "Entries to correct" };
 
@@ -36,6 +36,8 @@ function Detail({ id, mode, onDone }) {
             {doc?.dataUrl && (doc.mimeType === "application/pdf"
                 ? <p><a href={doc.dataUrl} download={doc.fileName}>Download {doc.fileName}</a></p>
                 : <img src={doc.dataUrl} alt={doc.fileName} style={{ maxWidth: "100%", maxHeight: 360, marginTop: 8, borderRadius: 8 }} />)}
+            {a.aiReview?.summary && <p className="meta">Automated document check (advice only): {a.aiReview.summary}</p>}
+            {a.informationRequest && <p className="meta">Information requested from the applicant on {when(a.informationRequest.at)}: “{a.informationRequest.note}”{a.informationRequest.respondedAt ? ` — answered ${when(a.informationRequest.respondedAt)}` : " — awaiting the applicant"}</p>}
             {a.fieldReport && <p className="meta">Field report: <strong>{a.fieldReport.recommendation === "approve" ? "recommends approval" : "recommends rejection"}</strong> by {a.fieldReport.by.epic} on {when(a.fieldReport.at)} ({label(a.fieldReport.method)}){a.fieldReport.booth ? `; part ${a.fieldReport.booth.partNumber}, ${a.fieldReport.booth.pollingStation}` : ""}{a.fieldReport.note ? ` — “${a.fieldReport.note}”` : ""}</p>}
             {a.decision && <p className="meta">Decision: <strong>{a.decision.outcome}</strong> by {a.decision.by.epic} on {when(a.decision.at)} — {a.decision.reason}{a.decision.effect ? ` (${a.decision.effect})` : ""}</p>}
 
@@ -73,7 +75,7 @@ export default function FormsPanel({ mode = "read" }) {
     const [open, setOpen] = useState(null);
     const counts = data?.counts ?? {};
     return (
-        <Panel title="Electoral forms 2, 2A, 3, 6A, 6B, 7 and 8"
+        <Panel title="Electoral forms 2, 2A, 3, 6, 6A, 6B, 7 and 8"
             intro={mode === "field" ? "Verify in the field and recommend. Your report is evidence for the ERO; nothing changes in the roll until the ERO decides."
                 : mode === "decide" ? "Decide applications for your constituency. Only an approval changes the roll; every order records its reasons."
                     : "Read-only view of applications in your jurisdiction."}>

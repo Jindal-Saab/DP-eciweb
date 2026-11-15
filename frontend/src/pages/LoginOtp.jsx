@@ -4,7 +4,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/axios";
 import { AuthContext } from "../context/AuthContext";
 import { useContext } from "react";
-import { homeFor, signInPath } from "../config/roles";
+import { landingFor, signInPath } from "../config/roles";
 
 function LoginOtp() {
     const [params] = useSearchParams();
@@ -29,7 +29,7 @@ function LoginOtp() {
     // different EPIC (e.g. a BLO while a voter session is open) must go through the OTP step,
     // which replaces the old session.
     if (logged && userData?.role && userData.epic === epic) {
-        return <Navigate to={homeFor(userData.role)} replace />;
+        return <Navigate to={landingFor(userData.role, portal)} replace />;
     }
     if (!/^[A-Z]{3}\d{7}$/.test(epic)) {
         return <Navigate to={signInPath(portal)} replace />;
@@ -47,7 +47,7 @@ function LoginOtp() {
             setBusy(true);
             const { data } = await api.post("/verification/otp/verify", { electorId: epic, otp });
             login(data.user.epic, data.token, data.user);
-            navigate(homeFor(data.user.role), { replace: true });
+            navigate(landingFor(data.user.role, portal), { replace: true });
         } catch (err) {
             setError(t("otp.verifyFailed"));
         } finally {

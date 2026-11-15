@@ -83,5 +83,11 @@ export const rolesInGroup = (groupId) => ROLES.filter((r) => r.group === groupId
  */
 export const homeFor = (roleId) => (roleId === "voter" ? "/dashboard" : "/desk");
 
+/** Officials are voters too: they have a voter page and their role's desk. */
+export const isOfficial = (roleId) => Boolean(roleId) && roleId !== "voter";
+
+/** Where to land after signing in at a portal: the voter portal always opens the voter page. */
+export const landingFor = (roleId, portal) => (portal === "voter" ? "/dashboard" : homeFor(roleId));
+
 /** Sign-in page for a role. */
 export const signInPath = (roleId) => `/signin/${roleId}`;

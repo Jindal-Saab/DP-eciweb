@@ -186,6 +186,7 @@ export const submitRegistration = asyncHandler(async (req, res) => {
             referenceImage: proofDocument,
             aiReview,
             duplicateFingerprint,
+            submittedBy: req.user ? { epic: req.user.epic, role: req.user.role } : null,
             submittedAt: new Date().toISOString()
         };
         if (form6) {

@@ -76,14 +76,14 @@ function Dashboard() {
     const [geography, setGeography] = useState(null);
 
     useEffect(() => {
-        if (!logged || userData?.role !== "voter") return;
+        if (!logged) return;
         api.get("/persona/status")
             .then(({ data }) => setVerification(data.data))
             .catch(() => setVerificationError(t("dashboard.statusUnavailable")));
     }, [logged, userData?.role, t]);
 
     const loadElector = () => {
-        if (!logged || userData?.role !== "voter" || !userData?.epic) return;
+        if (!logged || !userData?.epic) return;
         api.post("/electors/search", { method: "epic", epic: userData.epic })
             .then(({ data }) => {
                 setElector(data.data);
@@ -105,7 +105,7 @@ function Dashboard() {
     };
 
     const loadChangeRequests = () => {
-        if (!logged || userData?.role !== "voter") return;
+        if (!logged) return;
         api.get("/changes/my")
             .then(({ data }) => setChangeRequests(data.data?.items || []))
             .catch(() => setChangeRequests([]));
@@ -166,8 +166,8 @@ function Dashboard() {
     };
 
     if (!logged) return <Navigate to="/signin/voter" replace />;
-    if (userData?.role === "eci") return <Navigate to="/eci/dashboard" replace />;
-    if (userData?.role === "blo" || userData?.role === "admin") return <Navigate to="/admin" replace />;
+    // Every account is a voter's account too, so officials see their own voter page here; their
+    // desk stays one click away (header: "My desk").
 
     // Persona reports a passed check as "approved" (the backend also sets verified: true).
     // The sign-in copy of userData can be older than the check, so the live status decides.

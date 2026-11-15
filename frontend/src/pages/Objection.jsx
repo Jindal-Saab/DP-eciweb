@@ -12,7 +12,7 @@ const apiMessage = (err, fallback) => err?.response?.data?.message || fallback;
 const STATUS = { notice: "Notice period (elector may reply)", pending_verification: "Waiting for BLO verification", field_verified: "Verified by BLO, waiting for the ERO",
     accepted: "Accepted: entry deleted", rejected: "Rejected: entry kept", withdrawn: "Withdrawn" };
 const OPEN = ["notice", "pending_verification", "field_verified"];
-const FILERS = ["voter", "bla"];
+// Every account is a voter too, so anyone signed in may object; a party BLA objects for the party.
 
 export default function Objection() {
     const { logged, userData } = useContext(AuthContext);
@@ -23,7 +23,7 @@ export default function Objection() {
     const [notice, setNotice] = useState("");
     const [busy, setBusy] = useState(false);
 
-    const allowed = logged && FILERS.includes(userData?.role);
+    const allowed = logged && Boolean(userData?.role);
     const load = useCallback(async () => {
         try { setData((await api.get("/objections/my")).data.data); } catch (e) { setError(apiMessage(e, "Your objections could not be loaded.")); }
     }, []);

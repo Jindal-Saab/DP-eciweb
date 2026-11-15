@@ -146,6 +146,7 @@ function App() {
 
                     {/* Form links */}
                     <Route path="/voters/forms" element={<ElectoralFormsIndex />} />
+                    <Route path="/voters/forms/form-6" element={<Register />} />
                     <Route path="/voters/forms/form-2" element={<Form2 />} />
                     <Route path="/voters/forms/form-2a" element={<Form2A />} />
                     <Route path="/voters/forms/form-3" element={<Form3 />} />

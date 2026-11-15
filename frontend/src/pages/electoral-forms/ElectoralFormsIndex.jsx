@@ -2,6 +2,13 @@ import { Link } from "react-router-dom";
 
 const forms = [
   {
+    code: "Form 6",
+    title: "New Voter Registration",
+    description: "For an Indian citizen aged 18 or more (or turning 18 on a qualifying date) who is not yet in any electoral roll, or is moving in from another constituency.",
+    path: "/voters/forms/form-6",
+    group: "New electors",
+  },
+  {
     code: "Form 2",
     title: "Armed Forces Service Voter",
     description: "Statement of ordinary residence by a member of the Armed Forces, including eligible forces to which the Army Act applies.",
@@ -62,7 +69,7 @@ export default function ElectoralFormsIndex() {
           <p className="hero-description">Choose the application that matches your elector category and the change you need to request.</p>
         </div>
       </div>
-      {["Service voters", "Overseas electors", "Existing electors"].map((group) => (
+      {["New electors", "Service voters", "Overseas electors", "Existing electors"].map((group) => (
         <section key={group} className="admin-container" style={{ marginBottom: 24 }}>
           <h2>{group}</h2>
           <div className="info-section">

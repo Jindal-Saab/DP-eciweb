@@ -3,7 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { AuthContext } from "../context/AuthContext";
 import { NAV } from "../config/navigation";
-import { GROUPS, rolesInGroup, homeFor, signInPath } from "../config/roles";
+import { GROUPS, rolesInGroup, homeFor, isOfficial, signInPath } from "../config/roles";
 import { STATES } from "../config/states";
 import EciEmblem from "./EciEmblem";
 import { LANGUAGES } from "../languages";
@@ -125,7 +125,14 @@ export default function SiteHeader() {
             <li className="nav-item">
               {logged && userData ? (
                 <span className="nav-user">
-                  <Link className="nav-link" to={homeFor(userData.role)}>My section</Link>
+                  {isOfficial(userData.role) ? (
+                    <>
+                      <Link className="nav-link" to="/dashboard">My voter page</Link>
+                      <Link className="nav-link" to={homeFor(userData.role)}>My desk</Link>
+                    </>
+                  ) : (
+                    <Link className="nav-link" to={homeFor(userData.role)}>My section</Link>
+                  )}
                   <button type="button" className="btn btn-quiet btn-small" onClick={async () => { await logout(); navigate("/home"); }}>Sign out</button>
                   <button type="button" className="btn btn-quiet btn-small" title="Ends this account's sessions on every device" onClick={async () => { await logout({ everywhere: true }); navigate("/home"); }}>Sign out everywhere</button>
                 </span>

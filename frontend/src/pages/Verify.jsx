@@ -48,7 +48,7 @@ function Verify() {
     }, []);
 
     useEffect(() => {
-        if (!logged || userData?.role !== "voter") return;
+        if (!logged) return;
         loadStatus().catch(() => setError(t("verification.loadFailed") || "Could not load verification status"));
     }, [logged, userData?.role, loadStatus, t]);
 
@@ -138,9 +138,6 @@ function Verify() {
     }, [inquiryId, navigate, t]);
 
     if (!logged) return <Navigate to="/signin/voter" replace />;
-    if (userData?.role !== "voter") {
-        return <Navigate to={userData?.role === "eci" ? "/eci/dashboard" : "/admin"} replace />;
-    }
 
     return (
         <main className="persona-page">

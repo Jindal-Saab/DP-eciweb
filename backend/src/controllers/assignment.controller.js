@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { transaction } from "../config/redis.js";
 import { NODAL_FUNCTIONS, NODAL_ROLES, ROLE_BY_ID } from "../config/roles.js";
-import { getUserByEpic } from "../repositories/user.repository.js";
+import { getUserByEpic, getUserById, saveUser } from "../repositories/user.repository.js";
 import { getAssignment, listAllAssignments, saveAssignment } from "../repositories/assignment.repository.js";
 import { assignmentInEffect, containsJurisdiction, effectiveAssignments, hasPermission, validateJurisdiction } from "../services/authority.service.js";
 import { auditEvent, recordAudit } from "../services/audit.service.js";
@@ -104,7 +104,10 @@ export const grantAssignment = asyncHandler(async (req, res) => {
 
     const target = await getUserByEpic(body.epic);
     if (!target) throw new ApiError(404, "No account found for that identifier.");
-    if (!sameRole(target.role, role)) {
+    // A voter can be appointed to a role (a voter becomes a BLO, say): the account takes that role
+    // and keeps everything a voter can do. Any other account's assignments must match its role.
+    const promote = target.role === "voter" && role !== "voter";
+    if (!promote && !sameRole(target.role, role)) {
         throw new ApiError(409, `This account holds the role "${target.role}". An assignment must match the account's role.`);
     }
 
@@ -123,6 +126,11 @@ export const grantAssignment = asyncHandler(async (req, res) => {
     };
     const tx = transaction();
     saveAssignment(assignment, tx);
+    if (promote) {
+        saveUser({ ...target, role, designation: ROLE_BY_ID[role].label, roleGrantedFrom: "voter", roleGrantedAt: assignment.grantedAt, roleGrantedBy: req.user.epic }, tx);
+        await recordAudit(auditEvent({ actor: req.user, action: "user.role_granted", resource: { type: "user", id: target._id },
+            before: { role: "voter" }, after: { role, epic: target.epic } }), tx);
+    }
     await recordAudit(auditEvent({
         actor: req.user, action: "assignment.granted",
         resource: { type: "assignment", id: assignment._id }, jurisdiction,
@@ -142,6 +150,16 @@ export const revokeAssignment = asyncHandler(async (req, res) => {
     const revoked = { ...assignment, status: "revoked", revokedBy: req.user.epic, revokedAt: new Date().toISOString(), revokeReason: reason };
     const tx = transaction();
     saveAssignment(revoked, tx);
+    // A voter who was appointed to this role goes back to being only a voter once their last
+    // assignment for it is revoked.
+    const holder = await getUserById(assignment.userId);
+    const stillHolds = (await listAllAssignments()).some((a) => a._id !== assignment._id && a.userId === assignment.userId && a.role === assignment.role && a.status === "active");
+    if (holder?.roleGrantedFrom === "voter" && holder.role === assignment.role && !stillHolds) {
+        const { roleGrantedFrom, roleGrantedAt, roleGrantedBy, designation, ...rest } = holder; // eslint-disable-line no-unused-vars
+        saveUser({ ...rest, role: "voter" }, tx);
+        await recordAudit(auditEvent({ actor: req.user, action: "user.role_returned", resource: { type: "user", id: holder._id },
+            before: { role: assignment.role }, after: { role: "voter", epic: holder.epic }, note: reason }), tx);
+    }
     await recordAudit(auditEvent({
         actor: req.user, action: "assignment.revoked",
         resource: { type: "assignment", id: assignment._id }, jurisdiction: assignment.jurisdiction,

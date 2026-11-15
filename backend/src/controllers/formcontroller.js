@@ -1,4 +1,4 @@
-// Electoral forms other than Form 6: service voters (Forms 2, 2A, 3), overseas electors (Form 6A),
+// Electoral forms: new electors (Form 6), service voters (Forms 2, 2A, 3), overseas electors (Form 6A),
 // Aadhaar / alternative-document information (Form 6B), objections and deletions (Form 7) and
 // shifting, correction, replacement EPIC and PwD marking (Form 8).
 //
@@ -18,6 +18,11 @@
 // they are deleted once the application is decided (their metadata is kept).
 //
 // Storage (Redis): eform:<id>, eform:all, eform:ref:<reference> -> id, eform:doc:<id>:<name>.
+//
+// Form 6 keeps its own store and its richer intake (utils/form6.js, POST /auth/register), but it
+// follows the same flow and appears in the same officials' inbox: the staff endpoints below list,
+// open, field-verify and decide Form 6 applications too (BLO first, then the ERO/AERO), handing
+// the work to the Form 6 handlers in admin.controllers.js.
 import crypto from "crypto";
 import { redis, transaction } from "../config/redis.js";
 import { getElectorByEpic, nextSerialNumber, saveElector } from "../repositories/elector.repository.js";
@@ -28,6 +33,8 @@ import { opsEvent, publishEvents, recordEvent } from "../services/events.service
 import { reserveUniqueEpic } from "../services/registration.service.js";
 import { actorOf, areaOf, asRecord, assertScope, clean, inScope, newId, nowIso, page, store } from "../services/workflow.service.js";
 import { requireReason } from "../utils/documentProof.js";
+import { getRegistration, getRegistrationDocument, listRegistrations } from "../repositories/registration.repository.js";
+import { approveRegistration, rejectRegistration, submitFieldVerification } from "./admin.controllers.js";
 import { ApiError } from "../utils/ApiErrors.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -45,6 +52,7 @@ const CODE_TO_ROUTE = Object.fromEntries(Object.entries(FORMS).map(([route, f]) 
 export const STATUS = {
     submitted: "Received, awaiting field verification",
     field_verified: "Field verified, awaiting the ERO's decision",
+    information_required: "More information requested from the applicant",
     approved: "Approved by the Electoral Registration Officer",
     rejected: "Rejected by the Electoral Registration Officer",
     withdrawn: "Withdrawn"
@@ -52,6 +60,64 @@ export const STATUS = {
 const OPEN = ["submitted", "field_verified"];
 
 const forms = store("eform");
+
+// ---- Form 6 in the shared inbox ----
+
+export const FORM6 = { code: "FORM_6", title: "Form 6: inclusion of a new elector", kind: "inclusion", category: "general" };
+// Form 6 calls a new application "pending"; everything else uses the same words as the other forms.
+const regStatus = (status) => (status === "pending" ? "submitted" : status);
+
+/** A Form 6 application in the shape the officials' inbox uses for every other form. */
+const registrationItem = (r) => {
+    const fv = r.fieldVerification;
+    const status = regStatus(r.status);
+    return {
+        _id: r._id, referenceId: r._id, formCode: FORM6.code, title: FORM6.title, kind: FORM6.kind, source: "form6",
+        status, statusText: STATUS[status] ?? status,
+        jurisdiction: { state: r.state, district: r.district, constituency: r.assemblyConstituency },
+        subject: { name: r.name, epic: r.epic ?? null, targetEpic: null, targetName: null },
+        requestType: null, submittedAt: r.submittedAt,
+        fieldReport: fv ? { recommendation: fv.recommendation, note: fv.note ?? null, method: fv.method ?? "home_visit", by: { epic: fv.by, role: fv.role }, at: fv.at,
+            booth: fv.partNumber ? { partNumber: fv.partNumber, pollingStation: fv.pollingStation } : null } : null,
+        decision: ["approved", "rejected"].includes(r.status)
+            ? { outcome: r.status, reason: r.decisionNote ?? "Approved on the material on record.", by: { epic: r.decidedBy, role: r.decidedByRole }, at: r.decidedAt, epic: r.epic ?? null,
+                effect: r.status === "approved" ? `New elector entry ${r.epic} in part ${r.partNumber}.` : null }
+            : null
+    };
+};
+
+/** Form 6 details as flat label/value fields (the officials' detail view). Aadhaar is never included. */
+const flattenForm6 = (r) => {
+    const out = { name: r.name, dateOfBirth: String(r.dateOfBirth ?? "").slice(0, 10), gender: r.gender, address: r.address, pinCode: r.pinCode };
+    const walk = (value, prefix) => {
+        if (value === null || value === undefined || value === "" || value === false) return;
+        if (Array.isArray(value)) { if (value.length) out[prefix] = value.map(String).join(", "); return; }
+        if (typeof value === "object") {
+            for (const [k, v] of Object.entries(value)) walk(v, prefix ? `${prefix}${k[0].toUpperCase()}${k.slice(1)}` : k);
+            return;
+        }
+        out[prefix] = value;
+    };
+    if (r.form6) {
+        const { aadhaar, name, address, ...rest } = r.form6; // eslint-disable-line no-unused-vars
+        walk(rest, "");
+        if (name && typeof name === "object") walk(name, "name");
+    }
+    return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== null && v !== undefined && v !== ""));
+};
+
+const registrationDocuments = (r) => {
+    const meta = r.documents ?? (r.referenceImage ? { addressProof: { fileName: "address-proof", mimeType: null, size: 0, retained: true } } : {});
+    return Object.entries(meta).map(([name, d]) => ({ name, fileName: d.fileName ?? name, mimeType: d.mimeType ?? null, bytes: d.size ?? 0, deletedAt: d.retained === false ? (d.purgedAt ?? r.decidedAt ?? true) : null }));
+};
+
+/** The Form 6 application with this id inside the caller's jurisdiction, or null when the id is not a Form 6 one. */
+const registrationInScope = async (req) => {
+    const r = await getRegistration(req.params.id);
+    if (!r) return null;
+    assertScope(req, { state: r.state, district: r.district, constituency: r.assemblyConstituency }, "This application");
+    return r;
+};
 const docKey = (id, name) => `eform:doc:${id}:${name}`;
 const refKey = (ref) => `eform:ref:${ref}`;
 
@@ -242,7 +308,14 @@ export const trackForm = asyncHandler(async (req, res) => {
 /** Signed-in applicant: their own forms. */
 export const myForms = asyncHandler(async (req, res) => {
     const mine = (await forms.list()).filter((a) => a.submittedBy?.epic === req.user.epic || a.subject?.epic === req.user.epic);
-    res.json({ success: true, data: { items: page(mine, req.query, "submittedAt").map(publicView) } });
+    // Form 6 applications are made before the person has an account; the one that created this
+    // account (and any submitted while signed in) is listed too.
+    const form6 = (await listRegistrations())
+        .filter((r) => r.epic === req.user.epic || r._id === req.user.registrationId || r.submittedBy?.epic === req.user.epic)
+        .map((r) => { const i = registrationItem(r); return { referenceId: i.referenceId, formCode: i.formCode, title: i.title, status: i.status, statusText: i.statusText,
+            constituency: i.jurisdiction.constituency, state: i.jurisdiction.state, submittedAt: i.submittedAt, timeline: [{ step: "submitted", at: i.submittedAt }],
+            decision: i.decision ? { outcome: i.decision.outcome, reason: i.decision.reason, at: i.decision.at, epic: i.decision.epic } : null }; });
+    res.json({ success: true, data: { items: [...page(mine, req.query, "submittedAt").map(publicView), ...form6].sort((a, b) => String(b.submittedAt).localeCompare(String(a.submittedAt))) } });
 });
 
 // ---- Officials ----
@@ -253,12 +326,13 @@ const canSee = (req) => ["application:decide", "verification:field-report", "app
 export const listForStaff = asyncHandler(async (req, res) => {
     if (!canSee(req)) throw new ApiError(403, "Your role cannot see electoral applications.");
     const q = req.query;
-    const items = (await forms.list())
+    const form6 = (await listRegistrations()).map(registrationItem);
+    const items = [...(await forms.list()), ...form6]
         .filter((a) => inScope(req, a.jurisdiction))
         .filter((a) => (!q.status || a.status === q.status) && (!q.form || a.formCode === q.form))
-        .filter((a) => !q.open || OPEN.includes(a.status));
+        .filter((a) => !q.open || OPEN.includes(a.status) || a.status === "information_required");
     const counts = Object.fromEntries(Object.keys(STATUS).map((s) => [s, items.filter((a) => a.status === s).length]));
-    res.json({ success: true, data: { items: page(items, q, "submittedAt").map(sanitiseForList), counts, statusText: STATUS, forms: Object.fromEntries(Object.values(FORMS).map((f) => [f.code, f.title])) } });
+    res.json({ success: true, data: { items: page(items, q, "submittedAt").map((a) => (a.source === "form6" ? a : sanitiseForList(a))), counts, statusText: STATUS, forms: Object.fromEntries([FORM6, ...Object.values(FORMS)].map((f) => [f.code, f.title])) } });
 });
 
 const loadInScope = async (req) => {
@@ -270,6 +344,15 @@ const loadInScope = async (req) => {
 
 export const getForStaff = asyncHandler(async (req, res) => {
     if (!canSee(req)) throw new ApiError(403, "Your role cannot see electoral applications.");
+    if (!(await forms.get(req.params.id))) {
+        const r = await registrationInScope(req);
+        if (!r) throw new ApiError(404, "Application not found.");
+        const item = registrationItem(r);
+        return res.json({ success: true, data: { ...item, channel: "online", fields: flattenForm6(r), documents: registrationDocuments(r),
+            aadhaar: r.form6?.aadhaar?.last4 ? { last4: r.form6.aadhaar.last4 } : null, rollEntries: null,
+            aiReview: r.aiReview ? { status: r.aiReview.status ?? null, summary: r.aiReview.shortAiReview ?? r.aiReview.summary ?? null } : null,
+            informationRequest: r.informationRequest ?? null } });
+    }
     const app = await loadInScope(req);
     let current = null;
     for (const epic of [app.subject?.epic, app.subject?.targetEpic].filter(Boolean)) {
@@ -283,6 +366,19 @@ export const getForStaff = asyncHandler(async (req, res) => {
 /** One uploaded document, for an official working on the application. */
 export const getDocument = asyncHandler(async (req, res) => {
     if (!hasPermission(req.user, "application:decide") && !hasPermission(req.user, "verification:field-report")) throw new ApiError(403, "Only the BLO and the ERO/AERO open applicants' documents.");
+    if (!(await forms.get(req.params.id))) {
+        const r = await registrationInScope(req);
+        if (!r) throw new ApiError(404, "Application not found.");
+        const name = req.params.name;
+        let dataUrl = null; let meta = r.documents?.[name] ?? null;
+        if (name === "addressProof") dataUrl = r.referenceImage || null;
+        else if (["photo", "ageProof"].includes(name)) { const d = await getRegistrationDocument(r._id, name); if (d) dataUrl = `data:${d.mimeType};base64,${d.data}`; meta = meta ?? d; }
+        else throw new ApiError(404, "Document not found.");
+        if (!dataUrl) throw new ApiError(410, "This document is not stored (it was not supplied, or it was deleted after the decision).");
+        const mimeType = dataUrl.slice(5, dataUrl.indexOf(";"));
+        await recordAudit(auditEvent({ actor: req.user, action: "registration.document_viewed", resource: { type: "registration", id: r._id }, jurisdiction: { state: r.state, district: r.district, assemblyConstituency: r.assemblyConstituency }, note: name }));
+        return res.json({ success: true, data: { name, fileName: meta?.fileName ?? name, mimeType, bytes: meta?.size ?? null, dataUrl } });
+    }
     const app = await loadInScope(req);
     const meta = app.documents.find((d) => d.name === req.params.name);
     if (!meta) throw new ApiError(404, "Document not found.");
@@ -295,8 +391,12 @@ export const getDocument = asyncHandler(async (req, res) => {
 const needsBooth = (app) => app.kind === "inclusion" || (app.formCode === "FORM_8" && app.fields.applicationType === "shift");
 
 /** BLO: field verification and recommendation. Nothing changes in the roll. */
-export const fieldReport = asyncHandler(async (req, res) => {
+export const fieldReport = asyncHandler(async (req, res, next) => {
     if (!hasPermission(req.user, "verification:field-report")) throw new ApiError(403, "Only field staff record verification.");
+    if (!(await forms.get(req.params.id)) && (await getRegistration(req.params.id))) {
+        // Form 6: the BLO's field verification, the same step as for every other form.
+        return submitFieldVerification(req, res, next);
+    }
     const result = await forms.withLock(req.params.id, async () => {
         const app = await loadInScope(req);
         if (app.status !== "submitted") throw new ApiError(409, `This application is ${STATUS[app.status].toLowerCase()}.`);
@@ -420,8 +520,15 @@ const applyApproval = async (app, booth, officer, tx) => {
 };
 
 /** ERO/AERO: approve or reject, with a reason. Step-up is enforced on the route. */
-export const decideForm = asyncHandler(async (req, res) => {
+export const decideForm = asyncHandler(async (req, res, next) => {
     if (!hasPermission(req.user, "application:decide")) throw new ApiError(403, "Only the ERO or AERO decides applications.");
+    if (!(await forms.get(req.params.id)) && (await getRegistration(req.params.id))) {
+        // Form 6: approval needs the BLO's field verification first; a rejection needs a reason.
+        const decision = req.body?.decision;
+        if (decision !== "approve" && decision !== "reject") throw new ApiError(400, "decision must be approve or reject.");
+        req.body = { ...req.body, note: req.body?.reason ?? req.body?.note };
+        return decision === "approve" ? approveRegistration(req, res, next) : rejectRegistration(req, res, next);
+    }
     const result = await forms.withLock(req.params.id, async () => {
         const app = await loadInScope(req);
         if (!OPEN.includes(app.status)) throw new ApiError(409, `This application is already ${STATUS[app.status].toLowerCase()}.`);
@@ -488,5 +595,5 @@ export const withdrawForm = asyncHandler(async (req, res) => {
     res.json({ success: true, data: publicView(result) });
 });
 
-export const formCatalogue = (req, res) => res.json({ success: true, data: { forms: Object.entries(FORMS).map(([route, f]) => ({ route, ...f })), status: STATUS } });
+export const formCatalogue = (req, res) => res.json({ success: true, data: { forms: [{ route: "form-6", ...FORM6, submitTo: "/auth/register" }, ...Object.entries(FORMS).map(([route, f]) => ({ route, ...f }))], status: STATUS } });
 export const routeForCode = (code) => CODE_TO_ROUTE[code] ?? null;

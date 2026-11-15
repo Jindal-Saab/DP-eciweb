@@ -149,20 +149,28 @@ export const NODAL_ROLES = ["district_nodal_officer", "state_nodal_officer"];
 export const ROLE_BY_ID = Object.fromEntries(ROLES.map((role) => [role.id, role]));
 export const isKnownRole = (id) => Object.hasOwn(ROLE_BY_ID, id);
 
+// Every official is also a voter: whatever role an account holds, it keeps the voter's own
+// permissions (see their roll entry, submit and track their own applications, verify identity).
+export const VOTER_PERMISSIONS = ROLE_BY_ID.voter.permissions;
+
 /**
- * The permissions a stored account role carries. The legacy "admin" account type from the
- * original prototype signs in through the BLO portal and is treated exactly like a BLO.
- * An unknown role has no permissions at all.
+ * The permissions a stored account role carries, plus the voter's own permissions. The legacy
+ * "admin" account type from the original prototype signs in through the BLO portal and is
+ * treated exactly like a BLO. An unknown role has no permissions at all.
  */
-export const permissionsFor = (roleId) =>
-    ROLE_BY_ID[roleId === "admin" ? "blo" : roleId]?.permissions ?? [];
+export const permissionsFor = (roleId) => {
+    const role = ROLE_BY_ID[roleId === "admin" ? "blo" : roleId];
+    if (!role) return [];
+    return role.id === "voter" ? role.permissions : [...new Set([...role.permissions, ...VOTER_PERMISSIONS])];
+};
 
 /**
  * Which stored account roles may use which portal's sign-in page. Each portal admits its own role;
  * the BLO portal also admits the legacy "admin" account type that the prototype already had.
+ * The voter portal admits every account: officials are voters too (null = no restriction).
  */
 export const portalRoles = (portal) => {
-    if (!isKnownRole(portal)) return null;
+    if (!isKnownRole(portal) || portal === "voter") return null;
     return portal === "blo" ? ["blo", "admin"] : [portal];
 };
 
