@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { limiter } from "./middlewares/rateLimit.middleware.js";
+import { sanitizeRequest } from "./middlewares/sanitize.middleware.js";
 
 import electorRoutes from "./routes/elector.routes.js";
 import verificationRoutes from "./routes/verification.routes.js";
@@ -75,8 +76,17 @@ app.use((req, res, next) => {
         "Referrer-Policy": "no-referrer",
         "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
         "Cache-Control": "no-store",
+        // The API is never a page, a popup target or a plug-in source, and needs no browser features.
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "X-Permitted-Cross-Domain-Policies": "none",
+        "X-DNS-Prefetch-Control": "off",
+        "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
         "X-App-Mode": isTraining() ? "training" : "live"
     });
+    // HTTPS only from now on (2 years, subdomains too). Sent only over HTTPS, where browsers honour it.
+    if (req.secure || process.env.NODE_ENV === "production") {
+        res.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+    }
     next();
 });
 
@@ -147,6 +157,8 @@ app.use((req, res, next) => {
 });
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 app.use(cookieParser());
+// Strip prototype-pollution and MongoDB-operator keys ("__proto__", "$ne", ...) from every request.
+app.use(sanitizeRequest);
 
 // Public lookup endpoints are rate-limited to make bulk EPIC enumeration harder.
 const publicLimiter = limiter("public", { windowMs: 60 * 1000, limit: 60, message: "Too many requests. Please slow down." });
@@ -170,7 +182,7 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1/voting-verification", votingVerificationRoutes);
 app.use("/api/v1/persona", personaRoutes);
-app.use("/api/v1/notifications", notificationRoutes);
+app.use("/api/v1/notifications", publicLimiter, notificationRoutes);
 app.use("/api/v1/changes", changeRequestRoutes);
 app.use("/api/v1/eci", eciRoutes);
 app.use("/api/v1/assignments", assignmentRoutes);

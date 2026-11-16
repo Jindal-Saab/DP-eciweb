@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import { isRevoked, verifyAccessToken } from "../services/session.service.js";
 import { Server } from "socket.io";
 import { redis } from "../config/redis.js";
 import { getUserById } from "../repositories/user.repository.js";
@@ -33,9 +33,12 @@ export const attachRealtime = async (httpServer, { origins }) => {
 
     io.use(async (socket, next) => {
         try {
-            const decoded = jwt.verify(tokenFrom(socket) ?? "", process.env.ACCESS_TOKEN_SECRET);
+            const decoded = verifyAccessToken(tokenFrom(socket) ?? "");
+            // A signed-out session (or one older than "sign out everywhere") cannot open a feed.
+            if (await isRevoked(decoded)) return next(new Error("unauthorised"));
             const user = await getUserById(decoded._id);
             if (!user || user.suspended) return next(new Error("unauthorised"));
+            if (user.passwordChangedAt && decoded.iat * 1000 < Date.parse(user.passwordChangedAt) - 1000) return next(new Error("unauthorised"));
             if (!LIVE_PERMISSIONS.some((p) => hasPermission(user, p))) return next(new Error("forbidden"));
             socket.data.user = user;
             socket.data.assignments = await effectiveAssignments(user);

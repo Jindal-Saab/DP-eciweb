@@ -12,8 +12,7 @@ function AuthProvider({ children }) {
     const [dark, setDark] = useState(localStorage.getItem("dark") === "true");
 
     useEffect(() => {
-        const token = localStorage.getItem("token");
-        if (token && logged) {
+        if (logged) {
             api.get("/auth/me")
                 .then(res => {
                     const data = res.data.data || res.data;
@@ -21,7 +20,7 @@ function AuthProvider({ children }) {
                     localStorage.setItem("userData", JSON.stringify(data));
                 })
                 .catch(() => {
-                    localStorage.removeItem("token");
+                    localStorage.setItem("logged", "false");
                     localStorage.removeItem("userData");
                     localStorage.removeItem("user");
                     setLogged(false);
@@ -32,8 +31,8 @@ function AuthProvider({ children }) {
     }, [logged]);
 
     // `identifier` is the account's EPIC number.
-    const login = (identifier, token, data = {}) => {
-        localStorage.setItem("token", token);
+    // The session token itself stays in the httpOnly cookie; it is deliberately not stored here.
+    const login = (identifier, _token, data = {}) => {
         localStorage.setItem("user", identifier);
         localStorage.setItem("userData", JSON.stringify(data));
         localStorage.setItem("logged", "true");
@@ -46,7 +45,6 @@ function AuthProvider({ children }) {
     const logout = async ({ everywhere = false } = {}) => {
         clearStepUp();
         try { await api.post(everywhere === true ? "/auth/logout-all" : "/auth/logout"); } catch {}
-        localStorage.removeItem("token");
         localStorage.setItem("logged", "false");
         localStorage.removeItem("user");
         localStorage.removeItem("userData");

@@ -11,7 +11,7 @@ export const stepUpMinutes = () => Math.min(30, Math.max(1, Number(process.env.S
 export const stepUpRequired = () => process.env.STEP_UP_REQUIRED !== "false";
 
 export const signStepUp = (user) => jwt.sign(
-    { _id: user._id, purpose: STEP_UP_PURPOSE }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: `${stepUpMinutes()}m` });
+    { _id: user._id, purpose: STEP_UP_PURPOSE }, process.env.ACCESS_TOKEN_SECRET, { algorithm: "HS256", expiresIn: `${stepUpMinutes()}m` });
 
 export const requireStepUp = (req, res, next) => {
     if (!stepUpRequired()) return next();
@@ -19,7 +19,7 @@ export const requireStepUp = (req, res, next) => {
     const fail = (message) => next(new ApiError(401, message, [{ code: "STEP_UP_REQUIRED" }]));
     if (!token) return fail("Confirm it's you with a fresh one-time code before this action.");
     try {
-        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, { algorithms: ["HS256"] });
         if (decoded.purpose !== STEP_UP_PURPOSE || decoded._id !== req.user?._id) return fail("That confirmation belongs to another session. Confirm again.");
         req.stepUpAt = new Date(decoded.iat * 1000).toISOString();
         next();

@@ -22,6 +22,16 @@ export const publicUser = (user) => ({
   ...(user.bloId ? { bloId: user.bloId } : {})
 });
 
+// Session tokens are HMAC-SHA256 JWTs. Verification pins the algorithm so a token signed with any
+// other algorithm (including "none") is refused, whatever its header claims.
+export const TOKEN_ALGORITHMS = ["HS256"];
+// A step-up token (which carries a `purpose`) is signed with the same secret but is not a session.
+export const verifyAccessToken = (token) => {
+  const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, { algorithms: TOKEN_ALGORITHMS });
+  if (decoded?.purpose) throw new jwt.JsonWebTokenError("not a session token");
+  return decoded;
+};
+
 // Signs a JWT, sets the httpOnly cookie, and returns the token.
 export const issueSession = (res, user) => {
   // A suspended account is never given a session, whichever sign-in path it used.
@@ -30,7 +40,7 @@ export const issueSession = (res, user) => {
   const token = jwt.sign(
     { _id: user._id, epic: user.epic, role: user.role },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "8h", jwtid: crypto.randomUUID() }
+    { algorithm: "HS256", expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "8h", jwtid: crypto.randomUUID() }
   );
 
   res.cookie("accessToken", token, {
@@ -55,7 +65,7 @@ const revokedBeforeKey = (userId) => `session:revoked-before:${userId}`;
 /** Revokes one session token (no-op for a token that is invalid or already expired). */
 export const revokeToken = async (token) => {
   let decoded;
-  try { decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET); } catch { return false; }
+  try { decoded = verifyAccessToken(token); } catch { return false; }
   if (!decoded?.jti) return false;
   const ttl = Math.max(1, decoded.exp - Math.floor(Date.now() / 1000));
   await redis().set(revokedKey(decoded.jti), "1", { EX: ttl });

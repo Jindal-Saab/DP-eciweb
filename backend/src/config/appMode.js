@@ -19,3 +19,16 @@ export const checkConfig = (env = process.env) => {
     }
     return problems;
 };
+
+/**
+ * Settings that are allowed but weaken security in a live production deployment. They are printed
+ * at start-up as warnings (not refused, so a demonstration deployment keeps working).
+ */
+export const configWarnings = (env = process.env) => {
+    const warnings = [];
+    if (env.NODE_ENV !== "production" || env.APP_MODE === "training") return warnings;
+    if (env.ENABLE_DEMO_OTP_NOTIFICATIONS === "true") warnings.push("ENABLE_DEMO_OTP_NOTIFICATIONS is on: anyone who knows an EPIC number can read its sign-in code from /api/v1/notifications. Turn it off once a real SMS gateway is connected.");
+    if (!env.AADHAAR_ENCRYPTION_KEY) warnings.push("AADHAAR_ENCRYPTION_KEY is not set: only the last 4 Aadhaar digits are kept (the full number cannot be stored encrypted).");
+    if (!env.PERSONA_WEBHOOK_SECRET) warnings.push("PERSONA_WEBHOOK_SECRET is not set: Persona webhooks cannot be verified and are refused.");
+    return warnings;
+};

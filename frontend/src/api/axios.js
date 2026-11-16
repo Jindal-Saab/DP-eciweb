@@ -15,14 +15,9 @@ const api = axios.create({
     }
 });
 
-// Request interceptor to add JWT token
-api.interceptors.request.use((config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-});
+// The session travels only in the httpOnly cookie the server sets, which page scripts cannot read,
+// so an injected script cannot steal it. A token kept by an older version of the site is removed.
+try { localStorage.removeItem("token"); } catch { /* storage unavailable */ }
 
 // Re-authentication before sensitive approvals. The server answers 401 with code STEP_UP_REQUIRED;
 // the StepUpDialog asks for a fresh one-time code, and the request is retried once with the
@@ -48,9 +43,6 @@ api.interceptors.response.use(
                 return api({ ...error.config, _steppedUp: true });
             }
             return Promise.reject(error);
-        }
-        if (error.response?.status === 401) {
-            localStorage.removeItem("token");
         }
         return Promise.reject(error);
     }

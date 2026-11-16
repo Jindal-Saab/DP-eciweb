@@ -16,7 +16,9 @@ router.post("/login", loginLimiter, login);
 const registerLimiter = limiter("register", { windowMs: 60 * 60 * 1000, limit: 10, message: "Too many registration requests. Try again later." });
 // A signed-in voter (or official, who is a voter too) is recorded as the submitter.
 router.post("/register", registerLimiter, idempotent("form6"), optionalJWT, submitRegistration);
-router.get("/register/:id", getRegistrationStatus);
+// Status checks are public (reference ID and date of birth), so they are rate-limited against guessing.
+const statusLimiter = limiter("register-status", { windowMs: 15 * 60 * 1000, limit: 60, message: "Too many status checks. Try again later." });
+router.get("/register/:id", statusLimiter, getRegistrationStatus);
 // The applicant answers an information request, proving it is them with the reference ID and date of birth.
 router.post("/register/:id/information", registerLimiter, respondToInformationRequest("registration", applicantCheck));
 // Public: State/UT -> district -> assembly constituency options for the registration form.

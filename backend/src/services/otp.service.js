@@ -37,8 +37,9 @@ export const issueOtp = async (key, { ttlMs = OTP_TTL_MS, logLabel = `EPIC ${key
         .pExpire(codeKey(key), ttlMs)
         .set(feedKey(key), JSON.stringify([notification]), { PX: ttlMs })
         .exec();
-    // Demo only: there is no SMS gateway, so the code is printed for the tester.
-    console.log(`[DEMO OTP] ${logLabel}: ${otp}`);
+    // Demo only: there is no SMS gateway, so the code is printed for the tester. Never in production,
+    // where server logs are kept and read by more people than the account holder.
+    if (process.env.NODE_ENV !== "production") console.log(`[DEMO OTP] ${logLabel}: ${otp}`);
 };
 
 /** The demo notification feed for a key (codes that have not expired). */

@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import { isRevoked, verifyAccessToken } from "../services/session.service.js";
 import { getElectorByEpic, listElectors } from "../repositories/elector.repository.js";
 import { listStations } from "../repositories/election.repository.js";
 import { listRollVersions, rollAreaKey } from "../repositories/rollVersion.repository.js";
@@ -17,11 +17,14 @@ const MAX_MATCHES = 20;
 const pick = (record, fields) => Object.fromEntries(fields.filter((f) => f in record).map((f) => [f, record[f]]));
 
 // The search is public, so a session is optional: returns the signed-in user's EPIC, or null.
-const signedInEpic = (req) => {
+// A signed-out (revoked) session counts as not signed in, so it can no longer reveal an address.
+const signedInEpic = async (req) => {
     const token = req.cookies?.accessToken || req.header("Authorization")?.replace("Bearer ", "");
     if (!token) return null;
     try {
-        return jwt.verify(token, process.env.ACCESS_TOKEN_SECRET)?.epic || null;
+        const decoded = verifyAccessToken(token);
+        if (await isRevoked(decoded)) return null;
+        return decoded?.epic || null;
     } catch {
         return null;
     }
@@ -71,7 +74,7 @@ export const searchElector = async (req, res) => {
             }
         }
         if (!matches.length) return res.status(404).json({ success: false, message: "No matching electoral record was found." });
-        const me = signedInEpic(req);
+        const me = await signedInEpic(req);
         const shape = async (e) => ({ ...pick(e, PUBLIC_FIELDS), age: ageOf(e.dateOfBirth) ?? e.age ?? null, ...(me === e.epic ? pick(e, OWNER_FIELDS) : {}), ...(await contextOf(e)) });
         const items = await Promise.all(matches.map(shape));
         return res.json({ success: true, message: items.length > 1 ? `${items.length} matching entries found.` : "Electoral record found.", data: items[0], items });

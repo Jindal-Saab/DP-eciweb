@@ -40,7 +40,7 @@ export const useLiveEvents = (onChange, { enabled = true, types = null, pollMs =
         if (LIVE) {
             socket = io(ORIGIN, {
                 path: "/socket.io", withCredentials: true, transports: ["websocket"],
-                auth: (send) => send({ token: localStorage.getItem("token") || undefined }),
+                // The handshake carries the httpOnly session cookie (withCredentials); no token in script.
                 reconnectionDelay: 2000, reconnectionDelayMax: 30000
             });
             socket.on("connect", async () => {

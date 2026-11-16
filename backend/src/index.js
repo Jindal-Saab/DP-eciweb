@@ -2,7 +2,7 @@ import "dotenv/config";
 import app from "./app.js";
 import connectDB from "./config/db.js";
 import { connectRedis } from "./config/redis.js";
-import { APP_MODE, checkConfig } from "./config/appMode.js";
+import { APP_MODE, checkConfig, configWarnings } from "./config/appMode.js";
 import { attachRealtime } from "./realtime/socket.js";
 import { sweepOfflineDevices } from "./controllers/device.controller.js";
 import { mongoConfigured } from "./config/mongo.js";
@@ -13,6 +13,7 @@ if (configProblems.length) {
   for (const problem of configProblems) console.error(`CONFIG: ${problem}`);
   throw new Error("Unsafe configuration; see the messages above.");
 }
+for (const warning of configWarnings()) console.warn(`SECURITY WARNING: ${warning}`);
 if (APP_MODE === "training") console.log("TRAINING environment: practice data only.");
 
 const PORT = process.env.PORT || 8000;
